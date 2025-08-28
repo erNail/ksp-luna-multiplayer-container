@@ -1,0 +1,113 @@
+---
+name: "CI/CD"
+
+"on":
+  push: {}
+
+jobs:
+  pre-commit-job:
+    runs-on: "ubuntu-24.04"
+    steps:
+      - name: "Check out repository"
+        uses: "actions/checkout@v4.2.2"
+      - name: "Setup python"
+        uses: "actions/setup-python@v5.6.0"
+      - name: "Run pre-commit"
+        uses: "pre-commit/action@v3.0.1"
+
+  download-luna-multiplayer-job:
+    runs-on: "ubuntu-24.04"
+    steps:
+      - name: "Download luna server"
+        run: >-
+          curl -L -o luna-multiplayer.zip
+          https://github.com/LordofCheesecake/LunaMultiplayer/releases/download/v0.29.7/LunaMultiplayer-Server-linux-x64-Release.zip
+      - name: "Unzip luna multiplayer server"
+        run: |
+          unzip luna-multiplayer.zip -d luna-multiplayer
+      - name: "Upload luna server as artifact"
+        uses: "actions/upload-artifact@v4.6.2"
+        with:
+          name: "luna-multiplayer"
+          path: "luna-multiplayer"
+
+  container-image-build-and-push-job:
+    runs-on: "ubuntu-24.04"
+    needs:
+      - "download-luna-multiplayer-job"
+      - "determine-version-job"
+    permissions:
+      packages: "write"
+    steps:
+      - name: "Check out repository"
+        uses: "actions/checkout@v4.2.2"
+      - name: "Download Luna Multiplayer artifact"
+        uses: "actions/download-artifact@v5.0.0"
+        with:
+          name: "luna-multiplayer"
+          path: "luna-multiplayer"
+      - name: "Build image"
+        run: >-
+          buildah build
+          --file Containerfile
+          --tag ghcr.io/ernail/luna-multiplayer:${{ needs.determine-version-job.outputs.version }}
+      - name: "Login to ghcr.io"
+        run: |
+          buildah login --username ernail --password ${{ secrets.GITHUB_TOKEN }} ghcr.io
+      - name: "Push image"
+        run: >-
+          buildah push ghcr.io/ernail/luna-multiplayer:${{ needs.determine-version-job.outputs.version }}
+
+  determine-version-job:
+    runs-on: "ubuntu-24.04"
+    outputs:
+      version: "${{ steps.get_version.outputs.version }}"
+    steps:
+      - name: "Check out repository"
+        uses: "actions/checkout@v4.2.2"
+        with:
+          fetch-depth: 0
+      - name: "Setup verscout"
+        run: |
+          curl -L -o verscout.tar.gz \
+            https://github.com/erNail/verscout/releases/download/1.7.0/verscout_1.7.0_linux_amd64.tar.gz
+          tar -xzf verscout.tar.gz
+          chmod +x verscout
+      - name: "Run verscout next"
+        id: "get_version"
+        run: |
+          VERSION=$(./verscout next)
+          if [ -z "$VERSION" ]; then
+            exit 0
+          fi
+          if [ "${{ github.ref_name }}" != "${{ github.event.repository.default_branch }}" ]; then
+            VERSION="${VERSION}-rc${{github.run_id}}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  release-job:
+    runs-on: "ubuntu-24.04"
+    needs:
+      - "determine-version-job"
+      - "container-image-build-and-push-job"
+    if: "needs.determine-version-job.outputs.VERSION != ''"
+    permissions:
+      contents: "write"
+    steps:
+      - name: "Check out repository"
+        uses: "actions/checkout@v4.2.2"
+        with:
+          fetch-depth: 0
+      - name: "Generate release notes"
+        uses: "orhun/git-cliff-action@v4.5.1"
+        with:
+          args: "--tag ${{ needs.determine-version-job.outputs.VERSION }} --unreleased --strip header"
+        env:
+          OUTPUT: "release-notes.md"
+      - name: "Create GitHub Release"
+        uses: "softprops/action-gh-release@v2.3.2"
+        with:
+          tag_name: "${{ needs.determine-version-job.outputs.VERSION }}"
+          body_path: "release-notes.md"
+          draft: true
+...

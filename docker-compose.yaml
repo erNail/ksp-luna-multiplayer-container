@@ -1,0 +1,15 @@
+---
+version: "3"
+
+services:
+  ksp-luna-multiplayer:
+    image: "ghcr.io/ernail/luna-multiplayer:<VERSION>"
+    ports:
+      - "8800:8800/udp"
+      - "8900:8900/tcp"
+    volumes:
+      - "./luna-multiplayer-data/Config:/app/Config"
+      - "./luna-multiplayer-data/logs:/app/logs"
+      - "./luna-multiplayer-data/Plugins:/app/Plugins"
+      - "./luna-multiplayer-data/Universe:/app/Universe"
+...

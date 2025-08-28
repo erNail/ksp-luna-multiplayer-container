@@ -1,0 +1,37 @@
+---
+version: "3"
+
+tasks:
+  install:
+    cmds:
+      - "brew install pre-commit"
+
+  lint:
+    cmds:
+      - "pre-commit run --all-files"
+
+  build:
+    cmds:
+      - >-
+          curl -L -o luna-multiplayer.zip
+          https://github.com/LunaMultiplayer/LunaMultiplayer/releases/download/0.29.0/LunaMultiplayer-Server-Release.zip
+      - "unzip -o luna-multiplayer.zip -d luna-multiplayer"
+      - "docker buildx build . -t ernail/luna-multiplayer:local --file Containerfile"
+
+  run:
+    cmds:
+      - >-
+        docker run
+        -p 8800:8800/udp
+        -p 8900:8900/tcp
+        -v ./luna-multiplayer-data/Config:/app/Config
+        -v ./luna-multiplayer-data/Plugins:/app/Plugins
+        -v ./luna-multiplayer-data/Universe:/app/Universe
+        -v ./luna-multiplayer-data/logs:/app/logs
+        ernail/luna-multiplayer:local
+
+  debug:
+    cmds:
+      - "docker run -it ernail/luna-multiplayer:local /bin/bash"
+...
+
